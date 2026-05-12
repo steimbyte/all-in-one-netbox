@@ -1,0 +1,71 @@
+services:
+  netbox-postgres:
+    image: postgres:18-alpine
+    container_name: netbox-postgres
+    environment:
+      POSTGRES_DB: ${DB_NAME:-netbox}
+      POSTGRES_USER: ${DB_USER:-netbox}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD required}
+    volumes:
+      - ./postgres:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-netbox} -d ${DB_NAME:-netbox}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
+  netbox-redis:
+    image: valkey/valkey:9.0-alpine
+    container_name: netbox-redis
+    command: valkey-server --appendonly yes --requirepass ${REDIS_PASSWORD:?REDIS_PASSWORD required}
+    volumes:
+      - ./redis:/data
+    healthcheck:
+      test: ["CMD", "valkey-cli", "-a", "${REDIS_PASSWORD}", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  netbox-redis-cache:
+    image: valkey/valkey:9.0-alpine
+    container_name: netbox-redis-cache
+    command: valkey-server --requirepass ${REDIS_PASSWORD:?REDIS_PASSWORD required}
+    volumes:
+      - ./redis-cache:/data
+    healthcheck:
+      test: ["CMD", "valkey-cli", "-a", "${REDIS_PASSWORD}", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  netbox:
+    image: netboxcommunity/netbox:latest
+    container_name: netbox
+    depends_on:
+      - netbox-postgres
+      - netbox-redis
+      - netbox-redis-cache
+    environment:
+      DB_HOST: netbox-postgres
+      DB_NAME: ${DB_NAME:-netbox}
+      DB_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD required}
+      DB_USER: ${DB_USER:-netbox}
+      REDIS_HOST: netbox-redis
+      REDIS_PASSWORD: ${REDIS_PASSWORD:?REDIS_PASSWORD required}
+      REDIS_CACHE_HOST: netbox-redis-cache
+      REDIS_CACHE_PASSWORD: ${REDIS_PASSWORD:?REDIS_PASSWORD required}
+      SECRET_KEY: ${SECRET_KEY:?SECRET_KEY required}
+      SUPERUSER_NAME: ${SUPERUSER_NAME:-admin}
+      SUPERUSER_EMAIL: ${SUPERUSER_EMAIL:-admin@example.com}
+      SUPERUSER_PASSWORD: ${SUPERUSER_PASSWORD:?SUPERUSER_PASSWORD required}
+      SUPERUSER_API_TOKEN: ${SUPERUSER_API_TOKEN:-}
+      SKIP_SUPERUSER: 'false'
+      DEBUG: ${DEBUG:-false}
+    ports:
+      - "${NETBOX_PORT:-8000}:8080"
+    volumes:
+      - ./netbox-media:/opt/netbox/netbox/media
+      - ./netbox-reports:/opt/netbox/netbox/reports
+      - ./netbox-scripts:/opt/netbox/netbox/scripts
+    restart: unless-stopped

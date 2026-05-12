@@ -1,0 +1,13 @@
+# Secrets (fill in .env)
+.env
+
+# Data
+postgres/
+redis/
+redis-cache/
+netbox-media/
+netbox-reports/
+netbox-scripts/
+
+# Docker
+*.sock
