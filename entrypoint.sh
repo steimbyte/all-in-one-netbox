@@ -17,6 +17,9 @@ echo "Creating directories..."
 mkdir -p /data /var/run/postgresql /data/redis /var/log/supervisor /etc/supervisor/conf.d /etc/netbox/config
 chmod 777 /data /var/run/postgresql /data/redis
 
+# Plugins erstmal deaktiviert (müssen ins NetBox venv)
+# Plugin-Installation später möglich wenn Dockerfile angepasst
+
 # NetBox Config erstellen
 echo "Creating NetBox configuration..."
 cat > /etc/netbox/config/configuration.py << 'PYEOF'
@@ -104,9 +107,7 @@ METRICS_ENABLED = os.environ.get('METRICS_ENABLED', 'False').lower() == 'true'
 MAX_PAGE_SIZE = int(os.environ.get('MAX_PAGE_SIZE', '0'))
 
 # Plugins
-_plugins = os.environ.get('PLUGINS', '')
-if _plugins:
-    PLUGINS = [p.strip() for p in _plugins.split(',')]
+PLUGINS = ["netbox_topology_views"]
 
 # Housekeeping
 HOUSEKEEPING_INTERVAL = int(os.environ.get('HOUSEKEEPING_INTERVAL', '1'))

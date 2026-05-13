@@ -1,4 +1,4 @@
-# All-in-One NetBox - Lean Memory-Optimized
+# All-in-One NetBox mit Plugins
 FROM netboxcommunity/netbox:latest
 
 USER root
@@ -12,15 +12,21 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/* \
     && apt-get clean
 
-# Install netbox-topology-views plugin in NetBox venv
-RUN /opt/netbox/venv/bin/python3 -m pip install netbox-topology-views && \
-    mkdir -p /opt/netbox/netbox/static/netbox_topology_views/img && \
-    /opt/netbox/venv/bin/python3 /opt/netbox/manage.py collectstatic --noinput || true
+# Plugin requirements (netbox-topology-views default)
+COPY plugin_requirements.txt /opt/netbox/
+RUN /usr/local/bin/uv pip install -r /opt/netbox/plugin_requirements.txt
+
+# Create static folder for topology views
+RUN mkdir -p /opt/netbox/netbox/static/netbox_topology_views/img
+
+# Collectstatic
+RUN DEBUG="true" SECRET_KEY="dummy_dummy_dummy_dummy_dummy_dummy_dummy_dummy_dummy" \
+    /opt/netbox/venv/bin/python /opt/netbox/netbox/manage.py collectstatic --noinput || true
 
 # Create postgres user if not exists
 RUN id postgres &>/dev/null || useradd -r -s /bin/bash postgres
 
-# Copy entrypoint script with memory-optimized configs
+# Copy entrypoint script
 COPY entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
 
