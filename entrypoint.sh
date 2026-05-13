@@ -88,7 +88,7 @@ if DEBUG:
 # API Token Peppers
 _pepper = os.environ.get('API_TOKEN_PEPPER_1', '')
 if _pepper:
-    API_TOKEN_PEPPERS = [_pepper]
+    API_TOKEN_PEPPERS = {1: _pepper}
 
 # --- NAPALM ---
 NAPALM_USERNAME = os.environ.get('NAPALM_USERNAME', '')
@@ -117,7 +117,7 @@ REMOTE_AUTH_TIMEOUT = int(os.environ.get('REMOTE_AUTH_TIMEOUT', '30'))
 
 # LDAP Settings
 _AUTH_LDAP_SERVER = os.environ.get('AUTH_LDAP_SERVER_URI', '')
-if _auth_ldap_server:
+if _AUTH_LDAP_SERVER:
     AUTH_LDAP_SERVER_URI = _auth_ldap_server
     AUTH_LDAP_BIND_DN = os.environ.get('AUTH_LDAP_BIND_DN', '')
     AUTH_LDAP_BIND_PASSWORD = os.environ.get('AUTH_LDAP_BIND_PASSWORD', '')
