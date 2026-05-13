@@ -17,9 +17,8 @@ echo "Creating directories..."
 mkdir -p /data /var/run/postgresql /data/redis /var/log/supervisor /etc/supervisor/conf.d /etc/netbox/config
 chmod 777 /data /var/run/postgresql /data/redis
 
-# NetBox Config erstellen
-if [ ! -f /etc/netbox/config/configuration.py ]; then
-    echo "Creating NetBox configuration..."
+# NetBox Config erstellen (immer neu fuer frische Defaults)
+echo "Creating NetBox configuration..."
     cat > /etc/netbox/config/configuration.py << 'EOF'
 import os
 import json
@@ -42,42 +41,61 @@ DATABASE = {
     'CONN_MAX_AGE': int(os.environ.get('DB_TIMEOUT', '60')),
 }
 
-# --- Redis ---
+# --- Redis (NetBox 4.x format) ---
+_redis_host = os.environ.get('REDIS_HOST', 'localhost')
+_redis_port = os.environ.get('REDIS_PORT', '6379')
 _redis_pass = os.environ.get('REDIS_PASSWORD', '')
+_redis_db = os.environ.get('REDIS_DATABASE', '0')
+_redis_tasks_db = os.environ.get('REDIS_TASKS_DATABASE', '2')
+_redis_cache_host = os.environ.get('REDIS_CACHE_HOST', _redis_host)
+_redis_cache_port = os.environ.get('REDIS_CACHE_PORT', _redis_port)
+_redis_cache_pass = os.environ.get('REDIS_CACHE_PASSWORD', _redis_pass)
+_redis_cache_db = os.environ.get('REDIS_CACHE_DATABASE', '1')
+
 REDIS = {
     'default': {
-        'HOST': os.environ.get('REDIS_HOST', 'localhost'),
-        'PORT': os.environ.get('REDIS_PORT', '6379'),
+        'HOST': _redis_host,
+        'PORT': _redis_port,
         'PASSWORD': _redis_pass or None,
-        'DATABASE': os.environ.get('REDIS_DATABASE', '0'),
+        'DATABASE': _redis_db,
     },
     'tasks': {
-        'HOST': os.environ.get('REDIS_HOST', 'localhost'),
-        'PORT': os.environ.get('REDIS_PORT', '6379'),
+        'HOST': _redis_host,
+        'PORT': _redis_port,
         'PASSWORD': _redis_pass or None,
-        'DATABASE': os.environ.get('REDIS_TASKS_DATABASE', '2'),
+        'DATABASE': _redis_tasks_db,
     },
     'caching': {
-        'HOST': os.environ.get('REDIS_CACHE_HOST', os.environ.get('REDIS_HOST', 'localhost')),
-        'PORT': os.environ.get('REDIS_CACHE_PORT', os.environ.get('REDIS_PORT', '6379')),
-        'PASSWORD': os.environ.get('REDIS_CACHE_PASSWORD', _redis_pass) or None,
-        'DATABASE': os.environ.get('REDIS_CACHE_DATABASE', '1'),
+        'HOST': _redis_cache_host,
+        'PORT': _redis_cache_port,
+        'PASSWORD': _redis_cache_pass or None,
+        'DATABASE': _redis_cache_db,
     },
 }
-REDIS_CACHE = REDIS['caching'].copy()
 
-_cache_host = os.environ.get('REDIS_CACHE_HOST', os.environ.get('REDIS_HOST', 'localhost'))
-_cache_port = os.environ.get('REDIS_CACHE_PORT', os.environ.get('REDIS_PORT', '6379'))
-_cache_db = os.environ.get('REDIS_CACHE_DATABASE', '1')
-_cache_pass = os.environ.get('REDIS_CACHE_PASSWORD', _redis_pass)
+REDIS_CACHE = {
+    'HOST': _redis_cache_host,
+    'PORT': _redis_cache_port,
+    'PASSWORD': _redis_cache_pass or None,
+    'DATABASE': _redis_cache_db,
+}
+
+# Django Caches
+_cache_location = f"redis://{_redis_cache_host}:{_redis_cache_port}/{_redis_cache_db}"
+if _redis_cache_pass:
+    _cache_location = f"redis://:{_redis_cache_pass}@{_redis_cache_host}:{_redis_cache_port}/{_redis_cache_db}"
 CACHES = {
     'default': {
         'BACKEND': 'django.core.cache.backends.redis.RedisCache',
-        'LOCATION': f"redis://{_cache_host}:{_cache_port}/{_cache_db}",
-        'PASSWORD': _cache_pass or None,
+        'LOCATION': _cache_location,
     }
 }
-SESSION_CACHE = f"redis://{os.environ.get('REDIS_HOST', 'localhost')}:{os.environ.get('REDIS_PORT', '6379')}/2"
+
+# Session cache
+_session_location = f"redis://{_redis_host}:{_redis_port}/2"
+if _redis_pass:
+    _session_location = f"redis://:{_redis_pass}@{_redis_host}:{_redis_port}/2"
+SESSION_CACHE = _session_location
 
 # --- Security ---
 SECRET_KEY = os.environ.get('SECRET_KEY', os.environ.get('SECRET_KEY_AUTO', 'changeme'))
@@ -241,7 +259,17 @@ SUPERVISOR
 # PG starten
 echo "Starting PostgreSQL..."
 sudo -u postgres /usr/lib/postgresql/18/bin/postgres -D $PGDATA &
-sleep 3
+
+# Warten bis PG bereit ist
+echo "Waiting for PostgreSQL to be ready..."
+for i in {1..30}; do
+    if sudo -u postgres psql -c "SELECT 1" &>/dev/null; then
+        echo "PostgreSQL is ready!"
+        break
+    fi
+    echo "Waiting... ($i/30)"
+    sleep 2
+done
 
 # DB erstellen
 echo "Creating database..."
