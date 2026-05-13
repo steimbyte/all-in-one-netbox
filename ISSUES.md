@@ -8,25 +8,45 @@ ValueError: not enough values to unpack (expected 2, got 1)
 ```
 
 ### Cause
-`SESSION_CACHE` must be a dictionary in NetBox 4.x, not a string.
+Wrong configuration format for NetBox 4.x
 
 ### Fix
-```python
-# Wrong (string)
-SESSION_CACHE = "redis://localhost:6379/2"
+Use the correct netbox-docker configuration format:
 
-# Correct (dictionary)
-SESSION_CACHE = {
-    'HOST': 'localhost',
-    'PORT': '6379',
-    'PASSWORD': 'netbox',
-    'DATABASE': '2',
+```python
+# Database - must be DATABASES (plural) with 'default' key
+DATABASES = {
+    'default': {
+        'NAME': os.environ.get('DB_NAME', 'netbox'),
+        'USER': os.environ.get('DB_USER', 'netbox'),
+        'PASSWORD': os.environ.get('DB_PASSWORD', 'netbox'),
+        'HOST': os.environ.get('DB_HOST', 'localhost'),
+        'PORT': os.environ.get('DB_PORT', ''),
+    }
 }
+
+# Redis - must have 'tasks' and 'caching' sections
+REDIS = {
+    'tasks': {
+        'HOST': os.environ.get('REDIS_HOST', 'localhost'),
+        'PORT': int(os.environ.get('REDIS_PORT', '6379')),
+        'PASSWORD': os.environ.get('REDIS_PASSWORD', '') or None,
+        'DATABASE': int(os.environ.get('REDIS_TASKS_DATABASE', '2')),
+    },
+    'caching': {
+        'HOST': os.environ.get('REDIS_CACHE_HOST', 'localhost'),
+        'PORT': int(os.environ.get('REDIS_CACHE_PORT', '6379')),
+        'PASSWORD': os.environ.get('REDIS_CACHE_PASSWORD', '') or None,
+        'DATABASE': int(os.environ.get('REDIS_CACHE_DATABASE', '1')),
+    },
+}
+
+SESSION_ENGINE = 'django.contrib.sessions.backends.cache'
 ```
 
 ---
 
-## HTTP 500 After Config Change
+## HTTP 400 After Config Change
 
 ### Problem
 Config changes not applied, old broken config persists.
@@ -50,9 +70,9 @@ FATAL: the database system is starting up
 PostgreSQL recovery takes longer than the wait loop.
 
 ### Fix
-Increase wait time in entrypoint:
+Wait loop in entrypoint:
 ```bash
-for i in {1..60}; do
+for i in {1..30}; do
     if sudo -u postgres psql -c "SELECT 1" &>/dev/null; then
         break
     fi
@@ -94,42 +114,39 @@ environment:
   API_TOKEN_PEPPER_1: 'your-pepper-min-50-chars'
 ```
 
-The pepper must be ≥50 characters.
+The pepper must be ≥50 characters and formatted as integer key dict:
+```python
+API_TOKEN_PEPPERS = {1: 'pepper-string'}
+```
 
 ---
 
-## Redis Connection Error
+## REDIS Section Missing Subsection
 
 ### Problem
 ```
-ImproperlyConfigured: REDIS section in configuration.py is missing...
+django.core.exceptions.ImproperlyConfigured: REDIS section in configuration.py is missing the 'tasks' subsection.
 ```
 
 ### Cause
-Missing `default`, `tasks`, or `caching` subsections.
+Missing required `tasks` and `caching` subsections in REDIS dict.
+
+### Fix
+See the Redis configuration in the Login fix section above.
+
+---
+
+## Wrong Redis Password Format
+
+### Problem
+Redis connection fails with password
+
+### Cause
+Password stored as empty string instead of None
 
 ### Fix
 ```python
-REDIS = {
-    'default': {
-        'HOST': 'localhost',
-        'PORT': '6379',
-        'PASSWORD': 'netbox',
-        'DATABASE': '0',
-    },
-    'tasks': {
-        'HOST': 'localhost',
-        'PORT': '6379',
-        'PASSWORD': 'netbox',
-        'DATABASE': '2',
-    },
-    'caching': {
-        'HOST': 'localhost',
-        'PORT': '6379',
-        'PASSWORD': 'netbox',
-        'DATABASE': '1',
-    },
-}
+_redis_pass = os.environ.get('REDIS_PASSWORD', '') or None
 ```
 
 ---
@@ -194,4 +211,17 @@ docker compose restart
 
 # View real-time logs
 docker compose logs -f --tail=100
+
+# Force pull new image
+docker compose pull
+docker compose up -d
 ```
+
+---
+
+## Current Image Version
+
+**Image:** `steimerbyte/all-in-one-netbox:latest`
+**Digest:** `sha256:d10463b036c0a82579d2fa0dd8e2472a2053c054945d59c44cbfcc14e4170acd`
+
+See also: [GitHub Repository](https://github.com/steimbyte/all-in-one-netbox)
