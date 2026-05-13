@@ -17,11 +17,11 @@ echo "Creating directories..."
 mkdir -p /data /var/run/postgresql /data/redis /var/log/supervisor /etc/supervisor/conf.d /etc/netbox/config
 chmod 777 /data /var/run/postgresql /data/redis
 
-# NetBox Config erstellen (immer neu fuer frische Defaults)
+# NetBox Config erstellen
 echo "Creating NetBox configuration..."
-    cat > /etc/netbox/config/configuration.py << 'EOF'
+cat > /etc/netbox/config/configuration.py << 'PYEOF'
 import os
-import json
+import re
 from netbox.settings import *
 
 # --- Network ---
@@ -29,73 +29,49 @@ ALLOWED_HOSTS = os.environ.get('ALLOWED_HOSTS', '*').split()
 BANNER_LOGIN = os.environ.get('BANNER_LOGIN', '')
 BANNER_TOP = os.environ.get('BANNER_TOP', '')
 CORS_ORIGIN_ALLOW_ALL = os.environ.get('CORS_ORIGIN_ALLOW_ALL', 'True').lower() == 'true'
-CORS_ORIGINS = [x.strip() for x in os.environ.get('CORS_ORIGINS', '').split(',') if x.strip()]
 
 # --- Database ---
-DATABASE = {
-    'NAME': os.environ.get('DB_NAME', 'netbox'),
-    'USER': os.environ.get('DB_USER', 'netbox'),
-    'PASSWORD': os.environ.get('DB_PASSWORD', 'netbox'),
-    'HOST': os.environ.get('DB_HOST', 'localhost'),
-    'PORT': os.environ.get('DB_PORT', '5432'),
-    'CONN_MAX_AGE': int(os.environ.get('DB_TIMEOUT', '60')),
+DATABASES = {
+    'default': {
+        'NAME': os.environ.get('DB_NAME', 'netbox'),
+        'USER': os.environ.get('DB_USER', 'netbox'),
+        'PASSWORD': os.environ.get('DB_PASSWORD', 'netbox'),
+        'HOST': os.environ.get('DB_HOST', 'localhost'),
+        'PORT': os.environ.get('DB_PORT', ''),
+        'CONN_MAX_AGE': int(os.environ.get('DB_TIMEOUT', '300')),
+    }
 }
 
-# --- Redis (NetBox 4.x format) ---
+# --- Redis (NetBox 4.x format from netbox-docker) ---
 _redis_host = os.environ.get('REDIS_HOST', 'localhost')
-_redis_port = os.environ.get('REDIS_PORT', '6379')
-_redis_pass = os.environ.get('REDIS_PASSWORD', '')
-_redis_db = os.environ.get('REDIS_DATABASE', '0')
-_redis_tasks_db = os.environ.get('REDIS_TASKS_DATABASE', '2')
+_redis_port = int(os.environ.get('REDIS_PORT', '6379'))
+_redis_pass = os.environ.get('REDIS_PASSWORD', '') or None
+_redis_username = os.environ.get('REDIS_USERNAME', '')
+_redis_tasks_db = int(os.environ.get('REDIS_TASKS_DATABASE', '2'))
 _redis_cache_host = os.environ.get('REDIS_CACHE_HOST', _redis_host)
-_redis_cache_port = os.environ.get('REDIS_CACHE_PORT', _redis_port)
-_redis_cache_pass = os.environ.get('REDIS_CACHE_PASSWORD', _redis_pass)
-_redis_cache_db = os.environ.get('REDIS_CACHE_DATABASE', '1')
+_redis_cache_port = int(os.environ.get('REDIS_CACHE_PORT', '6379'))
+_redis_cache_pass = os.environ.get('REDIS_CACHE_PASSWORD', '') or None
+_redis_cache_db = int(os.environ.get('REDIS_CACHE_DATABASE', '1'))
 
 REDIS = {
-    'default': {
-        'HOST': _redis_host,
-        'PORT': _redis_port,
-        'PASSWORD': _redis_pass or None,
-        'DATABASE': _redis_db,
-    },
     'tasks': {
         'HOST': _redis_host,
         'PORT': _redis_port,
-        'PASSWORD': _redis_pass or None,
+        'USERNAME': _redis_username,
+        'PASSWORD': _redis_pass,
         'DATABASE': _redis_tasks_db,
     },
     'caching': {
         'HOST': _redis_cache_host,
         'PORT': _redis_cache_port,
-        'PASSWORD': _redis_cache_pass or None,
+        'USERNAME': _redis_username,
+        'PASSWORD': _redis_cache_pass,
         'DATABASE': _redis_cache_db,
     },
 }
 
-REDIS_CACHE = {
-    'HOST': _redis_cache_host,
-    'PORT': _redis_cache_port,
-    'PASSWORD': _redis_cache_pass or None,
-    'DATABASE': _redis_cache_db,
-}
-
-# Django Caches
-_cache_location = f"redis://{_redis_cache_host}:{_redis_cache_port}/{_redis_cache_db}"
-if _redis_cache_pass:
-    _cache_location = f"redis://:{_redis_cache_pass}@{_redis_cache_host}:{_redis_cache_port}/{_redis_cache_db}"
-CACHES = {
-    'default': {
-        'BACKEND': 'django.core.cache.backends.redis.RedisCache',
-        'LOCATION': _cache_location,
-    }
-}
-
-# Session cache
-_session_location = f"redis://{_redis_host}:{_redis_port}/2"
-if _redis_pass:
-    _session_location = f"redis://:{_redis_pass}@{_redis_host}:{_redis_port}/2"
-SESSION_CACHE = _session_location
+# SESSION_ENGINE for Django sessions
+SESSION_ENGINE = 'django.contrib.sessions.backends.cache'
 
 # --- Security ---
 SECRET_KEY = os.environ.get('SECRET_KEY', os.environ.get('SECRET_KEY_AUTO', 'changeme'))
@@ -108,13 +84,11 @@ _pepper = os.environ.get('API_TOKEN_PEPPER_1', '')
 if _pepper:
     API_TOKEN_PEPPERS = {1: _pepper}
 
-# --- NAPALM ---
+# NAPALM
 NAPALM_USERNAME = os.environ.get('NAPALM_USERNAME', '')
 NAPALM_PASSWORD = os.environ.get('NAPALM_PASSWORD', '')
-NAPALM_TIMEOUT = int(os.environ.get('NAPALM_TIMEOUT', '10'))
-NAPALM_ARGS = json.loads(os.environ.get('NAPALM_ARGS', '{}'))
 
-# --- Email ---
+# Email
 EMAIL_HOST = os.environ.get('EMAIL_SERVER', '')
 EMAIL_PORT = int(os.environ.get('EMAIL_PORT', '25'))
 EMAIL_USERNAME = os.environ.get('EMAIL_USERNAME', '')
@@ -122,66 +96,28 @@ EMAIL_PASSWORD = os.environ.get('EMAIL_PASSWORD', '')
 EMAIL_USE_SSL = os.environ.get('EMAIL_USE_SSL', 'False').lower() == 'true'
 EMAIL_USE_TLS = os.environ.get('EMAIL_USE_TLS', 'False').lower() == 'true'
 EMAIL_FROM = os.environ.get('EMAIL_FROM', 'netbox@localhost')
-EMAIL_TIMEOUT = int(os.environ.get('EMAIL_TIMEOUT', '30'))
-if os.environ.get('EMAIL_SSL_CERTFILE', ''):
-    EMAIL_SSL_CERTFILE = os.environ.get('EMAIL_SSL_CERTFILE')
-if os.environ.get('EMAIL_SSL_KEYFILE', ''):
-    EMAIL_SSL_KEYFILE = os.environ.get('EMAIL_SSL_KEYFILE')
 
-# --- Remote Auth (LDAP) ---
-REMOTE_AUTH_ENABLED = os.environ.get('REMOTE_AUTH_ENABLED', 'False').lower() == 'true'
-REMOTE_AUTH_BACKEND = os.environ.get('REMOTE_AUTH_BACKEND', '')
-REMOTE_AUTH_TIMEOUT = int(os.environ.get('REMOTE_AUTH_TIMEOUT', '30'))
-
-# LDAP Settings
-_AUTH_LDAP_SERVER = os.environ.get('AUTH_LDAP_SERVER_URI', '')
-if _AUTH_LDAP_SERVER:
-    AUTH_LDAP_SERVER_URI = _auth_ldap_server
-    AUTH_LDAP_BIND_DN = os.environ.get('AUTH_LDAP_BIND_DN', '')
-    AUTH_LDAP_BIND_PASSWORD = os.environ.get('AUTH_LDAP_BIND_PASSWORD', '')
-    AUTH_LDAP_USER_SEARCH_BASEDN = os.environ.get('AUTH_LDAP_USER_SEARCH_BASEDN', '')
-    AUTH_LDAP_USER_SEARCH_ATTR = os.environ.get('AUTH_LDAP_USER_SEARCH_ATTR', 'uid')
-    AUTH_LDAP_GROUP_SEARCH_BASEDN = os.environ.get('AUTH_LDAP_GROUP_SEARCH_BASEDN', '')
-    AUTH_LDAP_REQUIRE_GROUP = os.environ.get('AUTH_LDAP_REQUIRE_GROUP', '')
-    AUTH_LDAP_GROUP_TYPES = os.environ.get('AUTH_LDAP_GROUP_TYPES', '')
-    AUTH_LDAP_USER_ATTR_MAP_FIRST_NAME = os.environ.get('AUTH_LDAP_USER_ATTR_MAP_FIRST_NAME', 'first_name')
-    AUTH_LDAP_USER_ATTR_MAP_LAST_NAME = os.environ.get('AUTH_LDAP_USER_ATTR_MAP_LAST_NAME', 'last_name')
-    AUTH_LDAP_USER_ATTR_MAP_EMAIL = os.environ.get('AUTH_LDAP_USER_ATTR_MAP_EMAIL', 'email')
-    AUTH_LDAP_DEFAULT_GROUPS = os.environ.get('AUTH_LDAP_DEFAULT_GROUPS', '')
-    AUTH_LDAP_MIRROR_GROUPS = os.environ.get('AUTH_LDAP_MIRROR_GROUPS', 'False').lower() == 'true'
-
-# --- Metrics ---
+# Metrics
 METRICS_ENABLED = os.environ.get('METRICS_ENABLED', 'False').lower() == 'true'
-if METRICS_ENABLED:
-    PROMETHEUS_MULTIPROC_DIR = os.environ.get('PROMETHEUS_MULTIPROC_DIR', '/tmp/metrics')
 
-# --- Pagination ---
+# Max page size
 MAX_PAGE_SIZE = int(os.environ.get('MAX_PAGE_SIZE', '0'))
 
-# --- Housekeeping ---
-HOUSEKEEPING_INTERVAL = int(os.environ.get('HOUSEKEEPING_INTERVAL', '1'))
-
-# --- Release Channel ---
-RELEASE_CHANNEL = os.environ.get('RELEASE_CHANNEL', 'stable')
-
-# --- Plugins ---
+# Plugins
 _plugins = os.environ.get('PLUGINS', '')
 if _plugins:
     PLUGINS = [p.strip() for p in _plugins.split(',')]
-    _plugins_config = os.environ.get('PLUGINS_CONFIG', '{}')
-    if _plugins_config:
-        PLUGINS_CONFIG = json.loads(_plugins_config)
 
-# --- Logging ---
+# Housekeeping
+HOUSEKEEPING_INTERVAL = int(os.environ.get('HOUSEKEEPING_INTERVAL', '1'))
+
+# Logging
 _loglevel = os.environ.get('LOGLEVEL', 'INFO')
-if _loglevel:
-    LOGLEVEL = _loglevel
-if os.environ.get('LOGGING', ''):
-    LOGGING = json.loads(os.environ.get('LOGGING'))
-EOF
-    chmod 644 /etc/netbox/config/configuration.py
-    echo "NetBox configuration created"
-fi
+LOGLEVEL = _loglevel
+PYEOF
+
+chmod 644 /etc/netbox/config/configuration.py
+echo "NetBox configuration created"
 
 # PostgreSQL init
 echo "Checking PostgreSQL..."
